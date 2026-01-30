@@ -110,6 +110,51 @@ class E2E(object):
             # OSError: invalid timestamp on some platforms
             return None
 
+    @staticmethod
+    def _parse_patient_data_from_file(f, chunk):
+        """Parse patient data from chunk type 9.
+
+        Static method that reads and parses the patient_id_structure from the file.
+
+        Args:
+            f: Open file handle positioned after the chunk header
+            chunk: Parsed chunk structure (not currently used, for future extensibility)
+
+        Returns:
+            Parsed patient data object from construct, or None if parsing fails.
+        """
+        # Structure size: 31 + 51 + 15 + 4 (Int32un) + 1 + 25 = 127 bytes
+        raw = f.read(127)
+        try:
+            patient_data = e2e_binary.patient_id_structure.parse(raw)
+            return patient_data
+        except Exception:
+            return None
+
+    def _parse_patient_data_chunk(self, f, chunk):
+        """Parse patient data from chunk type 9 and set instance variables.
+
+        Reads and parses the patient_id_structure from the file, then sets
+        instance variables (sex, first_name, surname, patient_id, birthdate).
+
+        Args:
+            f: Open file handle positioned after the chunk header
+            chunk: Parsed chunk structure (not currently used, for future extensibility)
+
+        Returns:
+            Parsed patient data object from construct, or None if parsing fails.
+        """
+        patient_data = self._parse_patient_data_from_file(f, chunk)
+        if patient_data is not None:
+            # Set instance variables
+            self.sex = patient_data.sex
+            self.first_name = patient_data.first_name
+            self.surname = patient_data.surname
+            self.patient_id = patient_data.patient_id
+            self.birthdate = self._convert_ole_date_to_yyyymmdd(patient_data.birthdate)
+
+        return patient_data
+
     def read_oct_volume(
         self,
         legacy_intensity_transform: bool = False,
@@ -185,22 +230,7 @@ class E2E(object):
                     continue
 
                 if chunk.type == 9:  # patient data
-                    # Structure size: 31 + 51 + 15 + 4 (Int32un) + 1 + 25 = 127 bytes
-                    raw = f.read(127)
-                    try:
-                        patient_data = e2e_binary.patient_id_structure.parse(raw)
-                        self.sex = patient_data.sex
-                        self.first_name = patient_data.first_name
-                        self.surname = patient_data.surname
-                        self.patient_id = patient_data.patient_id
-
-                        # Convert birthdate from Windows OLE Automation date format
-                        # The birthdate may be stored as a fixed-point integer that needs scaling
-                        self.birthdate = self._convert_ole_date_to_yyyymmdd(
-                            patient_data.birthdate
-                        )
-                    except Exception:
-                        pass
+                    self._parse_patient_data_chunk(f, chunk)
 
                 elif chunk.type == 10004:  # bscan metadata
                     raw = f.read(104)
@@ -408,21 +438,7 @@ class E2E(object):
                     continue
 
                 if chunk.type == 9:  # patient data
-                    # Structure size: 31 + 51 + 15 + 4 (Int32un) + 1 + 25 = 127 bytes
-                    raw = f.read(127)
-                    try:
-                        patient_data = e2e_binary.patient_id_structure.parse(raw)
-                        self.sex = patient_data.sex
-                        self.first_name = patient_data.first_name
-                        self.surname = patient_data.surname
-                        self.patient_id = patient_data.patient_id
-
-                        # Convert birthdate from Windows OLE Automation date format
-                        self.birthdate = self._convert_ole_date_to_yyyymmdd(
-                            patient_data.birthdate
-                        )
-                    except Exception:
-                        pass
+                    self._parse_patient_data_chunk(f, chunk)
 
                 elif chunk.type == 3:  # scan preamble data
                     raw = f.read(chunk.size)
@@ -554,13 +570,9 @@ class E2E(object):
                 )
 
                 if chunk.type == 9:  # patient data
-                    # Structure size: 31 + 51 + 15 + 4 (Int32un) + 1 + 25 = 127 bytes
-                    raw = f.read(127)
-                    try:
-                        patient_data = e2e_binary.patient_id_structure.parse(raw)
+                    patient_data = E2E._parse_patient_data_from_file(f, chunk)
+                    if patient_data is not None:
                         metadata["patient_data"].append(_convert_to_dict(patient_data))
-                    except Exception:
-                        pass
 
                 elif chunk.type == 10004:  # bscan metadata
                     raw = f.read(104)
