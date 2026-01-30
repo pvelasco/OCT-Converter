@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 import warnings
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import datetime
 from itertools import chain
 from pathlib import Path
 
@@ -63,6 +63,52 @@ class E2E(object):
                 raw = f.read(52)
                 directory_chunk = e2e_binary.main_directory_structure.parse(raw)
                 current = directory_chunk.prev
+
+    @staticmethod
+    def _convert_ole_date_to_yyyymmdd(ole_date: float | int) -> str | None:
+        """Convert Windows OLE Automation date to YYYYMMDD string format.
+
+        The birthdate field in .e2e files can be stored in multiple formats:
+        1. YYYYMMDD integer (e.g., 19850315)
+        2. Fixed-point integer representation of OLE date (Int32 / 100000 = OLE date)
+        3. Direct OLE date float (rare)
+
+        Windows OLE dates represent days since 1/1/1900 where 1/1/1900 = 0.0.
+
+        Args:
+            ole_date: Birth date value from .e2e file (int or float).
+
+        Returns:
+            Date string in YYYYMMDD format, or None if conversion fails or date is invalid.
+
+        References:
+            - https://github.com/neurodial/LibE2E/blob/master/E2E/dataelements/patientdataelement.h#L47
+            - https://github.com/neurodial/LibOctData/blob/master/octdata/datastruct/date.cpp
+            - https://github.com/neurodial/LibE2E/issues/5
+        """
+        # Check if birthdate was stored as YYYYMMDD integer (encountered in some files)
+        if len(str(ole_date)) == 8:
+            return str(ole_date)
+
+        try:
+            if ole_date > 0:
+                # Check if this is a fixed-point integer (Int32 scaled by 100000)
+                # Empirically observed in .e2e files: birthdate stored as Int32un
+                # where actual_ole_date = int_value / 100000
+                if isinstance(ole_date, int) and ole_date > 100000:
+                    ole_date = ole_date / 100000.0
+
+                # Convert Windows OLE date to Unix timestamp
+                # 25569 = days between 1/1/1900 and Unix epoch (1/1/1970)
+                # 86400 = seconds per day
+                unix_time = (ole_date - 25569) * 86400
+                return datetime.fromtimestamp(unix_time).strftime("%Y%m%d")
+            else:
+                return None
+        except (ValueError, OSError):
+            # ValueError: date out of range
+            # OSError: invalid timestamp on some platforms
+            return None
 
     def read_oct_volume(
         self,
@@ -139,6 +185,7 @@ class E2E(object):
                     continue
 
                 if chunk.type == 9:  # patient data
+                    # Structure size: 31 + 51 + 15 + 4 (Int32un) + 1 + 25 = 127 bytes
                     raw = f.read(127)
                     try:
                         patient_data = e2e_binary.patient_id_structure.parse(raw)
@@ -146,25 +193,12 @@ class E2E(object):
                         self.first_name = patient_data.first_name
                         self.surname = patient_data.surname
                         self.patient_id = patient_data.patient_id
-                        if len(str(patient_data.birthdate)) == 8:
-                            # Encountered a file where birthdate had been stored as YYYYMMDD,
-                            # this is an attempt to catch that.
-                            self.birthdate = str(patient_data.birthdate)
-                        else:
-                            try:
-                                julian_birthdate = (
-                                    patient_data.birthdate / 64
-                                ) - 14558805
-                                self.birthdate = self.julian_to_ymd(julian_birthdate)
-                                # TODO: There are conflicting ideas of how to parse E2E's birthdate
-                                # https://bitbucket.org/uocte/uocte/wiki/Heidelberg%20File%20Format suggests the above,
-                                # whereas https://github.com/neurodial/LibE2E/blob/master/E2E/dataelements/patientdataelement.cpp
-                                # suggests that DOB is given as a Windows date. Neither option seems accurate to
-                                # test files with known-correct birthdates. More investigation is needed.
-                            except ValueError:
-                                # If the julian_to_ymd function cannot parse it into a date obj,
-                                # it throws a ValueError
-                                self.birthdate = None
+
+                        # Convert birthdate from Windows OLE Automation date format
+                        # The birthdate may be stored as a fixed-point integer that needs scaling
+                        self.birthdate = self._convert_ole_date_to_yyyymmdd(
+                            patient_data.birthdate
+                        )
                     except Exception:
                         pass
 
@@ -374,15 +408,19 @@ class E2E(object):
                     continue
 
                 if chunk.type == 9:  # patient data
+                    # Structure size: 31 + 51 + 15 + 4 (Int32un) + 1 + 25 = 127 bytes
                     raw = f.read(127)
                     try:
                         patient_data = e2e_binary.patient_id_structure.parse(raw)
                         self.sex = patient_data.sex
                         self.first_name = patient_data.first_name
                         self.surname = patient_data.surname
-                        julian_birthdate = (patient_data.birthdate / 64) - 14558805
-                        self.birthdate = self.julian_to_ymd(julian_birthdate)
                         self.patient_id = patient_data.patient_id
+
+                        # Convert birthdate from Windows OLE Automation date format
+                        self.birthdate = self._convert_ole_date_to_yyyymmdd(
+                            patient_data.birthdate
+                        )
                     except Exception:
                         pass
 
@@ -516,6 +554,7 @@ class E2E(object):
                 )
 
                 if chunk.type == 9:  # patient data
+                    # Structure size: 31 + 51 + 15 + 4 (Int32un) + 1 + 25 = 127 bytes
                     raw = f.read(127)
                     try:
                         patient_data = e2e_binary.patient_id_structure.parse(raw)
@@ -692,33 +731,3 @@ class E2E(object):
         data[selection_0] = 0
         data = np.clip(data, 0, 1)
         return data
-
-    def julian_to_ymd(self, J):
-        """Converts Julian Day to Gregorian YMD.
-
-        see https://en.wikipedia.org/wiki/Julian_day
-        with thanks to https://github.com/seanredmond/juliandate
-        """
-        y = 4716
-        j = 1401
-        m = 2
-        n = 12
-        r = 4
-        p = 1461
-        v = 3
-        u = 5
-        s = 153
-        w = 2
-        B = 274277
-        C = -38
-
-        f = J + j + int(((int((4 * J + B) / 146097)) * 3) / 4) + C
-        e = r * f + v
-        g = int((e % p) / r)
-        h = u * g + w
-
-        D = int((h % s) / u) + 1
-        M = ((int(h / s) + m) % n) + 1
-        Y = int(e / p) - y + int((n + m - M) / n)
-
-        return date(Y, M, D)

@@ -74,6 +74,12 @@ patient_id_structure = Struct(
     "first_name" / PaddedString(31, "ascii"),
     "surname" / PaddedString(51, "ascii"),
     "title" / PaddedString(15, "ascii"),
+    # birthdate storage format appears to vary:
+    # - Sometimes stored as YYYYMMDD integer (e.g., 19850315)
+    # - Sometimes stored in an encoded format requiring conversion
+    # Note: LibE2E header suggests double, but observed files use Int32un
+    # See: https://github.com/neurodial/LibE2E/blob/master/E2E/dataelements/patientdataelement.h#L47
+    #      https://github.com/neurodial/LibE2E/issues/5
     "birthdate" / Int32un,
     "sex" / PaddedString(1, "ascii"),
     "patient_id" / PaddedString(25, "ascii"),
