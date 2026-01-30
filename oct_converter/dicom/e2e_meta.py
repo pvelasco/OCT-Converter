@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from oct_converter.dicom.metadata import (
     DicomMetadata,
     ImageGeometry,
@@ -32,9 +34,7 @@ def e2e_patient_meta(meta: dict) -> PatientMeta:
         patient.last_name = patient_data[0].get("surname")
         patient.patient_id = patient_data[0].get("patient_id")
         patient.patient_sex = patient_data[0].get("sex")
-        # TODO patient.patient_dob
-        # Currently, E2E's patient_dob is incorrect, see
-        # the E2E reader for more context.
+        # patient_dob is set in e2e_dicom_metadata() from image.DOB
 
     return patient
 
@@ -145,6 +145,15 @@ def e2e_dicom_metadata(
 
     meta = DicomMetadata
     meta.patient_info = e2e_patient_meta(image.metadata)
+
+    # Convert patient birthdate from YYYYMMDD string to datetime object
+    if image.DOB:
+        try:
+            meta.patient_info.patient_dob = datetime.strptime(image.DOB, "%Y%m%d")
+        except (ValueError, TypeError):
+            # If conversion fails, leave as None
+            pass
+
     meta.manufacturer_info = e2e_manu_meta()
     meta.oct_image_params = e2e_image_params()
     if type(image) == OCTVolumeWithMetaData:
