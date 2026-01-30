@@ -70,6 +70,9 @@ image_structure = Struct(
     "height" / Int32un,
     "width" / Int32un,
 )
+
+# Patient data structure - 127 byte version (birthdate as Int32un)
+# Some E2E files use this format
 patient_id_structure = Struct(
     "first_name" / PaddedString(31, "ascii"),
     "surname" / PaddedString(51, "ascii"),
@@ -84,6 +87,19 @@ patient_id_structure = Struct(
     "sex" / PaddedString(1, "ascii"),
     "patient_id" / PaddedString(25, "ascii"),
 )
+
+# Patient data structure - 131 byte version (birthdate as Float64l)
+# Some E2E files use this format instead
+patient_id_structure_v2 = Struct(
+    "first_name" / PaddedString(31, "ascii"),
+    "surname" / PaddedString(51, "ascii"),
+    "title" / PaddedString(15, "ascii"),
+    # birthdate as Windows OLE Automation date (double)
+    "birthdate" / Float64l,
+    "sex" / PaddedString(1, "ascii"),
+    "patient_id" / PaddedString(25, "ascii"),
+)
+
 lat_structure = Struct(
     "unknown" / Array(14, Int8un),
     "laterality" / PaddedString(1, "ascii"),

@@ -114,22 +114,39 @@ class E2E(object):
     def _parse_patient_data_from_file(f, chunk):
         """Parse patient data from chunk type 9.
 
-        Static method that reads and parses the patient_id_structure from the file.
+        E2E files use different structure sizes for patient data depending on
+        scanner model/software version. This method tries both variants.
 
         Args:
             f: Open file handle positioned after the chunk header
-            chunk: Parsed chunk structure (not currently used, for future extensibility)
+            chunk: Parsed chunk structure with chunk.size attribute
 
         Returns:
             Parsed patient data object from construct, or None if parsing fails.
+
+        Note:
+            - 127-byte structure: birthdate as Int32un (4 bytes) - most common
+            - 131-byte structure: birthdate as Float64l (8 bytes) - some scanners
+            - chunk.size is NOT reliable for determining structure type due to padding,
+              so we try the 127-byte version first, then fall back to 131-byte
         """
-        # Structure size: 31 + 51 + 15 + 4 (Int32un) + 1 + 25 = 127 bytes
-        raw = f.read(127)
+        # Save position and read maximum bytes needed
+        pos = f.tell()
+        raw = f.read(max(127, chunk.size))
+
+        # Try 127-byte structure first (most common)
         try:
-            patient_data = e2e_binary.patient_id_structure.parse(raw)
+            patient_data = e2e_binary.patient_id_structure.parse(raw[:127])
             return patient_data
         except Exception:
-            return None
+            # If 127-byte fails, try 131-byte structure
+            try:
+                f.seek(pos)
+                raw = f.read(131)
+                patient_data = e2e_binary.patient_id_structure_v2.parse(raw)
+                return patient_data
+            except Exception:
+                return None
 
     def _parse_patient_data_chunk(self, f, chunk):
         """Parse patient data from chunk type 9 and set instance variables.
