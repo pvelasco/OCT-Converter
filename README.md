@@ -60,6 +60,14 @@ with open("fds_metadata.json", "w") as outfile:
 dcm = create_dicom_from_oct(filepath)
 ```
 
+## Debugging Tools
+The `debugging_tools/` directory contains scripts for troubleshooting E2E file parsing:
+
+* **`extract_e2e_dates.py`** - Extract and display patient metadata including acquisition date and birthdate from E2E files
+* **`test_patient_data_chunk.py`** - Low-level debugging tool that shows raw bytes and tests both patient data structure variants (127-byte and 131-byte)
+
+These tools are useful when encountering E2E files that fail to parse correctly or when investigating metadata extraction issues.
+
 ## Contributions
 Are welcome! Here is a [development roadmap](https://github.com/marksgraham/OCT-Converter/issues/86), including some easy first issues. Please open a [new issue](https://github.com/marksgraham/OCT-Converter/issues/new) to discuss any potential contributions.
 
