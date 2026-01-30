@@ -28,7 +28,7 @@ dependencies = [
     "imageio-ffmpeg",
     "h5py",
 ]
-requires-python = ">=3.7"
+requires-python = ">=3.10"
 
 [project.urls]
 Homepage = "https://github.com/marksgraham/OCT-Converter"
